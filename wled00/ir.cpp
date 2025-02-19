@@ -722,7 +722,15 @@ void handleIR()
     irCheckedTime = currentTime;
     if (irrecv->decode(&results)) {
       if (results.value != 0 && serialCanTX) { // only print results if anything is received ( != 0 )
-        Serial.printf_P(PSTR("IR recv: 0x%lX\n"), (unsigned long)results.value);
+        if (results.decode_type == MAGIQUEST) {
+          Serial.printf_P(PSTR("Magiquest Signal Received:\n"));
+          Serial.printf_P(PSTR("  Raw Value: 0x%lX\n"), (unsigned long)results.value);
+          Serial.printf_P(PSTR("  Bits: %d\n"), results.bits);
+          Serial.printf_P(PSTR("  Wand ID: 0x%X\n"), results.address);
+          Serial.printf_P(PSTR("  Magnitude: 0x%X\n"), results.command);
+        } else { 
+          Serial.printf_P(PSTR("IR recv: 0x%lX\n"), (unsigned long)results.value);
+        }
       }
       decodeIR(results.value);
       irrecv->resume();
