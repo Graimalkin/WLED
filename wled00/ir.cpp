@@ -1,13 +1,12 @@
 #include "wled.h"
 
 #ifndef WLED_DISABLE_INFRARED
+#include <IRremote.hpp>
 #include "ir_codes.h"
 
 /*
  * Infrared sensor support for several generic RGB remotes and custom JSON remote
  */
-
-IRrecv* irrecv;
 decode_results results;
 unsigned long irCheckedTime = 0;
 uint32_t lastValidCode = 0;
@@ -564,6 +563,10 @@ static void decodeIRJson(uint32_t code)
   sprintf_P(objKey, PSTR("\"0x%lX\":"), (unsigned long)code);
   strcpy_P(fileName, PSTR("/ir.json")); // for FS.exists()
 
+  if ( serialCanTX ) {
+    Serial.printf_P(PSTR("  Decoding JSON with code: %d\n"), code);
+  }
+
   // attempt to read command from ir.json
   // this may fail for two reasons: ir.json does not exist or IR code not found
   // if the IR code is not found readObjectFromFile() will clean() doc JSON document
@@ -698,42 +701,52 @@ static void decodeIR(uint32_t code)
 
 void initIR()
 {
-  if (irEnabled > 0) {
-    irrecv = new IRrecv(irPin);
-    if (irrecv) irrecv->enableIRIn();
-  } else irrecv = nullptr;
+  if (irEnabled > 0 ) {
+    IrReceiver.begin(irPin, false);
+  }
 }
 
 void deInitIR()
 {
-  if (irrecv) {
-    irrecv->disableIRIn();
-    delete irrecv;
+    IrReceiver.end();
+}
+ 
+const char* decodeTypeToStr(uint8_t type) {
+  switch (type) {
+    case LG :       return "LG";
+    case NEC:       return "NEC";
+    case SONY:      return "SONY";
+    case SAMSUNG:   return "SAMSUNG";
+    case MAGIQUEST: return "MAGIQUEST";
+    // Add other protocol cases as needed...
+    default:        return "UNKNOWN";
   }
-  irrecv = nullptr;
 }
 
 void handleIR()
 {
   unsigned long currentTime = millis();
   unsigned timeDiff = currentTime - irCheckedTime;
-  if (timeDiff > 120 && irEnabled > 0 && irrecv) {
+  if (timeDiff > 120 && irEnabled > 0 ) {
     if (strip.isUpdating() && timeDiff < 240) return;  // be nice, but not too nice
     irCheckedTime = currentTime;
-    if (irrecv->decode(&results)) {
-      if (results.value != 0 && serialCanTX) { // only print results if anything is received ( != 0 )
-        if (results.decode_type == MAGIQUEST) {
-          Serial.printf_P(PSTR("Magiquest Signal Received:\n"));
-          Serial.printf_P(PSTR("  Raw Value: 0x%lX\n"), (unsigned long)results.value);
-          Serial.printf_P(PSTR("  Bits: %d\n"), results.bits);
-          Serial.printf_P(PSTR("  Wand ID: 0x%X\n"), results.address);
-          Serial.printf_P(PSTR("  Magnitude: 0x%X\n"), results.command);
-        } else { 
-          Serial.printf_P(PSTR("IR recv: 0x%lX\n"), (unsigned long)results.value);
+    if (IrReceiver.decode()) {
+      auto &results = IrReceiver.decodedIRData;
+      if (results.numberOfBits > 0) {
+        if (serialCanTX && results.protocol != UNKNOWN ) { // only print results if anything is received ( != 0 )
+            Serial.printf_P(PSTR("Protocol Received: %s\n"), decodeTypeToStr(results.protocol));
+            Serial.printf_P(PSTR("  Raw Data: %d\n"), results.decodedRawData);
+            Serial.printf_P(PSTR("  Address: 0x%X\n"), results.address);
+            Serial.printf_P(PSTR("  Command: 0x%X\n"), results.command);
+            Serial.printf_P(PSTR("  Num Bits: %d\n"), results.numberOfBits);
+
+            Serial.println();
+            Serial.println(F("========================="));
         }
+
+        decodeIR(results.address);
       }
-      decodeIR(results.value);
-      irrecv->resume();
+      IrReceiver.resume();
     }
   }
 }
