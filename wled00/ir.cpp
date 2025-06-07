@@ -723,6 +723,27 @@ const char* decodeTypeToStr(uint8_t type) {
   }
 }
 
+// reverse the bit-order of a single byte
+static uint8_t reverse8(uint8_t b) {
+  b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
+  b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
+  b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
+  return b;
+}
+
+// mimic the old ESP8266 results.value
+static uint32_t esp8266Value(uint32_t raw) {
+  // shift off the low “address” byte
+  uint32_t w = raw >> 8;   // e.g. 0x00A35CFF
+  uint8_t b2 = reverse8((w >> 16) & 0xFF);
+  uint8_t b1 = reverse8((w >>  8) & 0xFF);
+  uint8_t b0 = reverse8((w      ) & 0xFF);
+  return (((uint32_t)b0 << 16)
+        | ((uint32_t)b1 <<  8)
+        | ((uint32_t)b2      ))
+        & 0x00FFFFFF;
+}
+
 void handleIR()
 {
   unsigned long currentTime = millis();
@@ -734,17 +755,25 @@ void handleIR()
       auto &results = IrReceiver.decodedIRData;
       if (results.numberOfBits > 0) {
         if (serialCanTX && results.protocol != UNKNOWN ) { // only print results if anything is received ( != 0 )
-            Serial.printf_P(PSTR("Protocol Received: %s\n"), decodeTypeToStr(results.protocol));
+            Serial.printf_P(PSTR("  Protocol Received: %s\n"), decodeTypeToStr(results.protocol));
             Serial.printf_P(PSTR("  Raw Data: %d\n"), results.decodedRawData);
             Serial.printf_P(PSTR("  Address: 0x%X\n"), results.address);
-            Serial.printf_P(PSTR("  Command: 0x%X\n"), results.command);
+            Serial.printf_P(PSTR("  Command: 0x%lX\n"), (unsigned long)results.command);
             Serial.printf_P(PSTR("  Num Bits: %d\n"), results.numberOfBits);
 
             Serial.println();
             Serial.println(F("========================="));
         }
 
-        decodeIR(results.address);
+        uint32_t code;
+        if (results.protocol == MAGIQUEST) {
+          code = results.address;
+        } else {
+          // mimic the old values from IRremoteESP8266 because I don't feel like re-populating the libarary
+          code = esp8266Value((uint32_t)results.decodedRawData);
+        }
+        Serial.printf_P(PSTR("  Code: 0x%06lX\n"), (unsigned long)code);
+        decodeIR(code);
       }
       IrReceiver.resume();
     }
