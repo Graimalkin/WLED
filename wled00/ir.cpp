@@ -564,6 +564,11 @@ static void decodeIRJson(uint32_t code)
   sprintf_P(objKey, PSTR("\"0x%lX\":"), (unsigned long)code);
   strcpy_P(fileName, PSTR("/ir.json")); // for FS.exists()
 
+  // for ease of setting up .json file
+  if ( serialCanTX ) {
+    Serial.printf_P(PSTR("  Decoding JSON with code: %d\n"), code);
+  }
+
   // attempt to read command from ir.json
   // this may fail for two reasons: ir.json does not exist or IR code not found
   // if the IR code is not found readObjectFromFile() will clean() doc JSON document
@@ -754,8 +759,16 @@ void handleIR()
     irCheckedTime = currentTime;
     if (IrReceiver.decode()) {
       auto &results = IrReceiver.decodedIRData;
-      uint32_t value = esp8266Value((uint32_t)results.decodedRawData);
-      if (results.numberOfBits != 0 && serialCanTX) { // only print results if anything is received ( != 0 )
+      if (results.numberOfBits > 0) {
+        // determine what we're using as value
+        uint32_t value;
+        if (results.protocol == MAGIQUEST) {
+          // we just want to key off the address here, command has things like velocity and direction - hard to replicate to issue a command
+          value = results.address;
+        } else {
+          value = esp8266Value((uint32_t)results.decodedRawData);
+        }
+        if (serialCanTX) { // only print results if anything is received ( != 0 )
           Serial.printf_P(PSTR("  Protocol Received: %s\n"), decodeTypeToStr(results.protocol));
           Serial.printf_P(PSTR("  Raw Data: %d\n"), results.decodedRawData);
           Serial.printf_P(PSTR("  Address: 0x%X\n"), results.address);
@@ -765,8 +778,9 @@ void handleIR()
 
           Serial.println();
           Serial.println(F("========================="));
+        }
+        decodeIR(value);
       }
-      decodeIR(value);
       IrReceiver.resume();
     }
   }
