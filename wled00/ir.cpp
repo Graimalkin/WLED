@@ -727,29 +727,6 @@ const char* decodeTypeToStr(uint8_t type)
   }
 }
 
-// reverse the bit-order of a single byte
-static uint8_t reverse8(uint8_t b) 
-{
-  b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
-  b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
-  b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
-  return b;
-}
-
-// mimic the old ESP8266 results.value so we don't have to rebuild them
-static uint32_t esp8266Value(uint32_t raw) 
-{
-  // shift off the low “address” byte
-  uint32_t w = raw >> 8;   // e.g. 0x00A35CFF
-  uint8_t b2 = reverse8((w >> 16) & 0xFF);
-  uint8_t b1 = reverse8((w >>  8) & 0xFF);
-  uint8_t b0 = reverse8((w      ) & 0xFF);
-  return (((uint32_t)b0 << 16)
-        | ((uint32_t)b1 <<  8)
-        | ((uint32_t)b2      ))
-        & 0x00FFFFFF;
-}
-
 void handleIR()
 {
   unsigned long currentTime = millis();
@@ -759,28 +736,39 @@ void handleIR()
     irCheckedTime = currentTime;
     if (IrReceiver.decode()) {
       auto &results = IrReceiver.decodedIRData;
-      if (results.numberOfBits > 0) {
-        // determine what we're using as value
-        uint32_t value;
-        if (results.protocol == MAGIQUEST) {
+      
+      // we need to reverse the bits for NEC, SAMSUNG and SONY remotes to not break backwards compatability
+      uint32_t value;
+      if (results.protocol == NEC || results.protocol == SAMSUNG || results.protocol == SONY)
+      { 
+        if ( results.decodedRawData == 0 ) {
+          value = 0xFFFFFFFF; // if we get a 0, we assume it is a repeat code
+        }
+        else { 
+          value = bitreverse32Bit(results.decodedRawData);
+        }
+      }
+      else if (results.protocol == MAGIQUEST) {
           // we just want to key off the address here, command has things like velocity and direction - hard to replicate to issue a command
           value = results.address;
-        } else {
-          value = esp8266Value((uint32_t)results.decodedRawData);
-        }
-        if (serialCanTX) { // only print results if anything is received ( != 0 )
-          Serial.printf_P(PSTR("  Protocol Received: %s\n"), decodeTypeToStr(results.protocol));
-          Serial.printf_P(PSTR("  Raw Data: %d\n"), results.decodedRawData);
-          Serial.printf_P(PSTR("  Address: 0x%X\n"), results.address);
-          Serial.printf_P(PSTR("  Command: 0x%lX\n"), (unsigned long)results.command);
-          Serial.printf_P(PSTR("  Num Bits: %d\n"), results.numberOfBits);
-          Serial.printf_P(PSTR("  Code: 0x%06lX\n"), (unsigned long)value);
-
-          Serial.println();
-          Serial.println(F("========================="));
-        }
-        decodeIR(value);
+      } else {
+        value = results.decodedRawData;
       }
+
+      // all the returns for IR in case we need to debug a remote
+      DEBUG_PRINTF_P(PSTR("IR Protocol Received: %s\n"), decodeTypeToStr(results.protocol));
+      DEBUG_PRINTF_P(PSTR("  Raw Data: %d\n"), results.decodedRawData);
+      DEBUG_PRINTF_P(PSTR("  Address: 0x%X\n"), results.address);
+      DEBUG_PRINTF_P(PSTR("  Command: 0x%lX\n"), (unsigned long)results.command);
+      DEBUG_PRINTF_P(PSTR("  Num Bits: %d\n"), results.numberOfBits);
+      DEBUG_PRINTF_P(PSTR("  Value: 0x%0lX\n"), (unsigned long)value);
+
+      #ifndef WLED_DEBUG
+        if (results.numberOfBits != 0 && serialCanTX) { // only print results if anything is received ( != 0 )
+            Serial.printf_P(PSTR("  Protocol Received: %s, Value: 0x%0lX\n"), decodeTypeToStr(results.protocol), (unsigned long)value);
+        }
+      #endif
+      decodeIR(value);
       IrReceiver.resume();
     }
   }
