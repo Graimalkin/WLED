@@ -564,11 +564,6 @@ static void decodeIRJson(uint32_t code)
   sprintf_P(objKey, PSTR("\"0x%lX\":"), (unsigned long)code);
   strcpy_P(fileName, PSTR("/ir.json")); // for FS.exists()
 
-  // for ease of setting up .json file
-  if ( serialCanTX ) {
-    Serial.printf_P(PSTR("  Decoding JSON with code: %d\n"), code);
-  }
-
   // attempt to read command from ir.json
   // this may fail for two reasons: ir.json does not exist or IR code not found
   // if the IR code is not found readObjectFromFile() will clean() doc JSON document
