@@ -731,7 +731,7 @@ void handleIR()
     irCheckedTime = currentTime;
     if (IrReceiver.decode()) {
       auto &results = IrReceiver.decodedIRData;
-
+      
       // we need to reverse the bits for NEC, SAMSUNG and SONY remotes to not break backwards compatability
       uint32_t value;
       if (results.protocol == NEC || results.protocol == SAMSUNG || results.protocol == SONY)
@@ -743,7 +743,10 @@ void handleIR()
           value = bitreverse32Bit(results.decodedRawData);
         }
       }
-      else {
+      else if (results.protocol == MAGIQUEST) {
+          // we just want to key off the address here, command has things like velocity and direction - hard to replicate to issue a command
+          value = results.address;
+      } else {
         value = results.decodedRawData;
       }
 
